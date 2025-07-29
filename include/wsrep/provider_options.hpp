@@ -27,6 +27,7 @@
 
 #include "provider.hpp"
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>

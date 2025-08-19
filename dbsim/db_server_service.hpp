@@ -54,7 +54,7 @@ namespace db
         wsrep::view get_view(wsrep::client_service&, const wsrep::id&)
             override;
         wsrep::gtid get_position(wsrep::client_service&) override;
-        void set_position(wsrep::client_service&, const wsrep::gtid&) override;
+      void set_position(wsrep::client_service&, const wsrep::gtid&, bool) override;
         void log_state_change(enum wsrep::server_state::state,
                               enum wsrep::server_state::state) override;
         int wait_committing_transactions(int) override;

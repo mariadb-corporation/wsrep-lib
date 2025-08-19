@@ -2150,34 +2150,54 @@ void wsrep::transaction::cleanup()
 void wsrep::transaction::debug_log_state(
     const char* context) const
 {
-    WSREP_LOG_DEBUG(
-        client_state_.debug_log_level(),
-        wsrep::log::debug_level_transaction,
-        context
-        << "\n    server: " << server_id_
-        << ", client: " << int64_t(client_state_.id().get())
+
+    if (client_state_.debug_log_level() < wsrep::log::debug_level_transaction)
+    {
+        return;
+    }
+
+    std::ostringstream oss;
+    oss << context;
+    oss << " server: " << server_id_
+        << " client: " << int64_t(client_state_.id().get())
         << ", state: " << wsrep::to_c_string(client_state_.state())
         << ", mode: " << wsrep::to_c_string(client_state_.mode())
-        << "\n    trx_id: " << int64_t(id_.get())
-        << ", seqno: " << ws_meta_.seqno().get()
-        << ", flags: " << flags()
-        << "\n"
+        << ", trx_id: " << int64_t(id_.get());
+
+    if (id_.is_undefined())
+    {
+        return;
+    }
+
+    oss << "\n"
         << "    state: " << wsrep::to_c_string(state_)
         << ", bfa_state: " << wsrep::to_c_string(bf_abort_state_)
         << ", error: " << wsrep::to_c_string(client_state_.current_error())
-        << ", status: " << client_state_.current_error_status()
-        << "\n"
-        << "    is_sr: " << is_streaming()
-        << ", frags: " << streaming_context_.fragments_certified()
-        << ", frags size: " << streaming_context_.fragments().size()
-        << ", unit: " << streaming_context_.fragment_unit()
-        << ", size: " << streaming_context_.fragment_size()
-        << ", counter: " << streaming_context_.unit_counter()
-        << ", log_pos: " << streaming_context_.log_position()
-        << ", sr_rb: " << streaming_context_.rolled_back()
-        << "\n    own: " << (client_state_.owning_thread_id_ == wsrep::this_thread::get_id())
-        << " thread_id: " << client_state_.owning_thread_id_
-        << "");
+        << ", status: " << client_state_.current_error_status();
+
+    if (not ws_meta_.seqno().is_undefined())
+    {
+        oss << "\n    seqno: " << ws_meta_.seqno().get()
+            << ", flags: " << flags();
+    }
+
+    if (is_streaming())
+    {
+        oss << "    is_sr: " << is_streaming()
+            << ", frags: " << streaming_context_.fragments_certified()
+            << ", frags size: " << streaming_context_.fragments().size()
+            << ", unit: " << streaming_context_.fragment_unit()
+            << ", size: " << streaming_context_.fragment_size()
+            << ", counter: " << streaming_context_.unit_counter()
+            << ", log_pos: " << streaming_context_.log_position()
+            << ", sr_rb: " << streaming_context_.rolled_back();
+    }
+    oss << "\n    own: "
+        << (client_state_.owning_thread_id_ == wsrep::this_thread::get_id())
+        << " thread_id: " << client_state_.owning_thread_id_;
+
+    WSREP_LOG_DEBUG(client_state_.debug_log_level(),
+                    wsrep::log::debug_level_transaction, oss.str());
 }
 
 void wsrep::transaction::debug_log_key_append(const wsrep::key& key) const

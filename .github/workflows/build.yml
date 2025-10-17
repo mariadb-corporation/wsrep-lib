@@ -99,19 +99,11 @@ jobs:
     - name: Install build dependencies
       run: sudo apt-get install -y libboost-filesystem-dev libboost-program-options-dev libboost-test-dev libboost-thread-dev ccache
 
-    # See https://cristianadam.eu/20200113/speeding-up-c-plus-plus-github-actions-using-ccache/
-    - name: Prepare ccache timestamp
-      id: ccache_cache_timestamp
-      shell: cmake -P {0}
-      run: |
-        string(TIMESTAMP current_date "%Y-%m-%d-%H;%M;%S" UTC)
-        message("::set-output name=timestamp::${current_date}")
-
     - name: Configure ccache
       uses: actions/cache@v4
       with:
-        path: ~/.ccache
-        key: ${{ matrix.config.os }}-${{ matrix.config.CC }}-${{ matrix.config.version }}-${{ matrix.config.type }}-ccache-${{ steps.ccache_cache_timestamp.outputs.timestamp }}
+        path: ~/.cache/ccache
+        key: ${{ matrix.config.os }}-${{ matrix.config.CC }}-${{ matrix.config.version }}-${{ matrix.config.type }}-ccache-${{ github.run_id }}
         restore-keys: ${{ matrix.config.os }}-${{ matrix.config.CC }}-${{ matrix.config.version }}-${{ matrix.config.type }}-ccache-
 
     - name: Create Build Environment
@@ -157,7 +149,10 @@ jobs:
       shell: bash
       run: |
         make -j3 VERBOSE=1
-        ccache -s
+
+    - name: Show ccache statistics
+      run: |
+        ccache --show-stats --verbose
 
     - name: Test
       working-directory: ${{runner.workspace}}/build

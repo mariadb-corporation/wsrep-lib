@@ -813,7 +813,8 @@ catch (const wsrep::runtime_error& e)
     wsrep::log_error() << "sst_received failed: " << e.what();
     if (provider_)
     {
-        provider_->sst_received(wsrep::gtid::undefined(), -EINTR);
+        provider_->sst_received(wsrep::gtid::undefined(),
+                                (disable_node_reset_ ? -ECANCELED : -EINTR));
     }
     return 1;
 }

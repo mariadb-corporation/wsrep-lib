@@ -1200,13 +1200,13 @@ int wsrep::transaction::commit_or_rollback_by_xid(const wsrep::xid& xid,
                      sa->transaction().id(),
                      client_state_.id());
     wsrep::ws_meta meta(stid);
-
+    lock.unlock();
     const enum wsrep::provider::status cert_ret(
         provider().certify(client_state_.id(),
                            ws_handle_,
                            flags(),
                            meta, nullptr));
-
+    lock.lock();
     int ret;
     if (cert_ret == wsrep::provider::success)
     {

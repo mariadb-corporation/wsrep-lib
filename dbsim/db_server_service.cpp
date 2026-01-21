@@ -146,7 +146,8 @@ wsrep::gtid db::server_service::get_position(wsrep::client_service&)
 }
 
 void db::server_service::set_position(wsrep::client_service&,
-                                      const wsrep::gtid& gtid)
+                                      const wsrep::gtid& gtid,
+				      bool)
 {
     return server_.storage_engine().store_position(gtid);
 }

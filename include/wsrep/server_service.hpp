@@ -196,7 +196,8 @@ namespace wsrep
          */
         virtual void set_position(
             wsrep::client_service& client_service,
-            const wsrep::gtid& gtid) = 0;
+            const wsrep::gtid& gtid,
+	    bool aborted) = 0;
 
         /**
          * Log a state change event.

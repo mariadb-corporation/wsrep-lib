@@ -1977,7 +1977,7 @@ int wsrep::transaction::append_sr_keys_for_commit()
                  j(i->second.begin());
              ret == 0 && j != i->second.end(); ++j)
         {
-            wsrep::key key(wsrep::key::shared);
+            wsrep::key key(wsrep::key::reference);
             key.append_key_part(i->first.data(), i->first.size());
             key.append_key_part(j->data(), j->size());
             ret = provider().append_key(ws_handle_, key);

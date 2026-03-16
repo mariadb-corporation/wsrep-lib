@@ -160,7 +160,8 @@ namespace wsrep
         }
 
         void set_position(wsrep::client_service&,
-                          const wsrep::gtid& gtid) WSREP_OVERRIDE
+                          const wsrep::gtid& gtid,
+                          bool) WSREP_OVERRIDE
         {
             position_ = gtid;
         }

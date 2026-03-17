@@ -4,6 +4,7 @@
 
 add_library(wsrep-lib
   allowlist_service_v1.cpp
+  assert.cpp
   client_state.cpp
   config_service_v1.cpp
   connection_monitor_service_v1.cpp

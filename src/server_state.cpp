@@ -93,7 +93,19 @@ static int apply_fragment(wsrep::server_state& server_state,
     int ret(0);
     int apply_err;
     wsrep::mutable_buffer err;
+    wsrep::xid xid;
     {
+        /*
+          serialize concurrent applier threads on the same SA.
+          The lock wraps the high_priority_switch lifetime so the switch's
+          store_globals() (which sets SA's owning_thread_id_) cannot
+          interleave between two appliers and confuse assertions like
+          client_state::before_prepare's `owning_thread_id_ == this_thread`.
+          Released before the OUTER append_fragment_and_commit (below) to
+          avoid a deadlock with group-commit ordering: that commit can
+          wait for prior writesets, and those may need this lock too.
+        */
+        wsrep::apply_serial_lock_guard apply_lock(*streaming_applier);
         wsrep::high_priority_switch sw(high_priority_service,
                                        *streaming_applier);
         apply_err = streaming_applier->apply_write_set(ws_meta, data, err);
@@ -101,6 +113,13 @@ static int apply_fragment(wsrep::server_state& server_state,
         {
             assert(err.size() == 0);
             streaming_applier->after_apply();
+            /*
+              Snapshot xid under the lock; the SA's transaction state can be
+              mutated by the next applier thread once the lock is released,
+              so reading xid from the unlocked append_fragment_and_commit
+              path below would race.
+            */
+            xid = streaming_applier->transaction().xid();
         }
         else
         {
@@ -131,7 +150,6 @@ static int apply_fragment(wsrep::server_state& server_state,
         if (!apply_err)
         {
             high_priority_service.debug_crash("crash_apply_cb_before_append_frag");
-            const wsrep::xid xid(streaming_applier->transaction().xid());
             ret = high_priority_service.append_fragment_and_commit(
                 ws_handle, ws_meta, data, xid);
             high_priority_service.debug_crash("crash_apply_cb_after_append_frag");
@@ -159,6 +177,8 @@ static int commit_fragment(wsrep::server_state& server_state,
 {
     int ret(0);
     {
+        /* serialize SA apply */
+        wsrep::apply_serial_lock_guard apply_lock(*streaming_applier);
         wsrep::high_priority_switch sw(
             high_priority_service, *streaming_applier);
         wsrep::mutable_buffer err;
@@ -233,6 +253,8 @@ static int rollback_fragment(wsrep::server_state& server_state,
     // be removed manually.
     wsrep::const_buffer no_error;
     {
+        // serialize SA rollback
+        wsrep::apply_serial_lock_guard apply_lock(*streaming_applier);
         wsrep::high_priority_switch ws(
             high_priority_service, *streaming_applier);
         // Streaming applier rolls back out of order. Fragment

@@ -1253,19 +1253,45 @@ void wsrep::transaction::xa_detach()
     debug_log_state("xa_detach enter");
     assert(state() == s_prepared ||
            client_state_.state() == wsrep::client_state::s_quitting);
+    const bool is_high_priority(
+        client_state_.mode() == wsrep::client_state::m_high_priority);
     if (state() == s_prepared)
     {
-        wsrep::server_state& server_state(client_state_.server_state());
-        server_state.convert_streaming_client_to_applier(&client_state_);
-        client_service_.store_globals();
-        client_service_.cleanup_transaction();
+        /*
+          convert_streaming_client_to_applier() looks up the
+          client_state in server_state.streaming_clients_ which only
+          contains local (m_local) clients that originated the SR
+          transaction. When xa_detach is called from a streaming-applier
+          (m_high_priority), the applier's client_state is not in that map;
+          skip the convert path.
+        */
+        if (!is_high_priority)
+        {
+            wsrep::server_state& server_state(client_state_.server_state());
+            server_state.convert_streaming_client_to_applier(&client_state_);
+            client_service_.store_globals();
+            client_service_.cleanup_transaction();
+        }
     }
     wsrep::unique_lock<wsrep::mutex> lock(client_state_.mutex_);
     streaming_context_.cleanup();
-    state(lock, s_aborting);
-    state(lock, s_aborted);
-    provider().release(ws_handle_);
-    cleanup();
+    if (!is_high_priority)
+    {
+        /*
+          For m_high_priority (streaming-applier on a follower)
+          leave state at s_prepared and skip provider().release/cleanup() so
+          commit_fragment in server_state.cpp skips remove_fragments (the
+          `trx.state() != s_prepared` check) and the matching XA
+          COMMIT/ROLLBACK applier still finds the SA in streaming_appliers_
+          map by its transaction id. The server-side SR-detached path uses
+          ha_commit_or_rollback_by_xid + xid_cache_delete via m_xa_xid /
+          m_is_sr_xa_detached on the SA.
+        */
+        state(lock, s_aborting);
+        state(lock, s_aborted);
+        provider().release(ws_handle_);
+        cleanup();
+    }
     debug_log_state("xa_detach leave");
 }
 

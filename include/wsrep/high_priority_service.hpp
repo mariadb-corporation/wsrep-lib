@@ -235,9 +235,41 @@ namespace wsrep
          */
         virtual void debug_crash(const char* crash_point) = 0;
 
+        /**
+         * serialize concurrent applier threads operating on the
+         * same streaming-applier (SA).  apply_serial_lock()/unlock() are
+         * called by server_state.cpp around the apply_write_set() call in
+         * apply_fragment/commit_fragment so the SA's owning_thread_id_
+         * tracking and per-SA THD state mutations cannot race between two
+         * applier threads handling consecutive fragments of the same SR
+         * transaction.
+         */
+        virtual void apply_serial_lock() {}
+        virtual void apply_serial_unlock() {}
+
     protected:
         wsrep::server_state& server_state_;
         bool must_exit_;
+    };
+
+    /**
+     * guard for apply_serial_lock/unlock. Used in
+     * server_state.cpp::apply_fragment and commit_fragment to bracket the
+     * SA's apply_write_set call.
+     */
+    class apply_serial_lock_guard
+    {
+    public:
+        apply_serial_lock_guard(high_priority_service& service)
+            : service_(service)
+        {
+            service_.apply_serial_lock();
+        }
+        ~apply_serial_lock_guard() { service_.apply_serial_unlock(); }
+    private:
+        apply_serial_lock_guard(const apply_serial_lock_guard&);
+        apply_serial_lock_guard& operator=(const apply_serial_lock_guard&);
+        high_priority_service& service_;
     };
 
     class high_priority_switch

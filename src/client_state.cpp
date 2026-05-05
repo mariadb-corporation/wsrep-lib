@@ -489,7 +489,12 @@ void wsrep::client_state::disable_streaming()
 
 void wsrep::client_state::xa_detach()
 {
-    assert(mode_ == m_local);
+    /*
+      streaming-applier (m_high_priority) THDs reach this path via
+      slave_applier_reset_xa_trans() -> wsrep_xa_detach() when applying an
+      XA PREPARE writeset on a follower.
+    */
+    assert(mode_ == m_local || mode_ == m_high_priority);
     assert(state_ == s_none || state_ == s_exec || state_ == s_quitting);
     transaction_.xa_detach();
 }

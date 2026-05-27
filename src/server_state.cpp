@@ -340,10 +340,17 @@ static int apply_write_set(wsrep::server_state& server_state,
             }
             else
             {
-                ret = high_priority_service.rollback(ws_handle, ws_meta);
-                ret = ret || (high_priority_service.after_apply(), 0);
-                ret = ret || high_priority_service.log_dummy_write_set(
-                    ws_handle, ws_meta, err);
+                // Always log a dummy write set, even on rollback failure: it
+                // releases commit order (drives the inconsistency vote) and
+                // advances the SE checkpoint. The rollback result is still
+                // propagated into ret.
+                int const rollback_ret(
+                    high_priority_service.rollback(ws_handle, ws_meta));
+                high_priority_service.after_apply();
+                int const dummy_ret(
+                    high_priority_service.log_dummy_write_set(
+                        ws_handle, ws_meta, err));
+                ret = rollback_ret || dummy_ret;
                 ret = resolve_return_error(err.size() > 0, ret, apply_err);
             }
         }

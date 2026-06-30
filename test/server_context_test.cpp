@@ -502,6 +502,25 @@ BOOST_FIXTURE_TEST_CASE(
     BOOST_REQUIRE(ss.state() == wsrep::server_state::s_disconnected);
 }
 
+// Regression test for MDEV-35940. The SYNCED event may arrive while the
+// server is still in donor state, before sst_sent() had a chance to
+// return it from donor to joined. on_sync() must then transition
+// donor -> joined -> synced instead of attempting the unallowed
+// donor -> synced transition (which aborts in a debug build).
+BOOST_FIXTURE_TEST_CASE(
+    server_state_sst_first_sync_on_donor,
+    sst_first_server_fixture)
+{
+    bootstrap();
+    ss.start_sst("", wsrep::gtid(cluster_id, wsrep::seqno(2)), false);
+    BOOST_REQUIRE(ss.state() == wsrep::server_state::s_donor);
+    // SYNCED arrives before sst_sent(): must not abort and must end up
+    // synced. Reaching s_synced proves the transition went through
+    // joined, since the state machine forbids a direct donor -> synced.
+    ss.on_sync();
+    BOOST_REQUIRE(ss.state() == wsrep::server_state::s_synced);
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 //                     Test cases for init first                             //
 ///////////////////////////////////////////////////////////////////////////////

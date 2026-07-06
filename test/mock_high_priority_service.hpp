@@ -40,6 +40,7 @@ namespace wsrep
             , fail_next_toi_()
             , fail_next_rollback_()
             , fail_next_append_fragment_()
+            , fail_next_remove_fragments_()
             , after_apply_calls_()
             , client_state_(client_state)
             , replaying_(replaying)
@@ -66,7 +67,7 @@ namespace wsrep
             const wsrep::xid&) WSREP_OVERRIDE
         { return fail_next_append_fragment_ ? 1 : 0; }
         int remove_fragments(const wsrep::ws_meta&) WSREP_OVERRIDE
-        { return 0; }
+        { return fail_next_remove_fragments_ ? 1 : 0; }
         int commit(const wsrep::ws_handle&, const wsrep::ws_meta&)
             WSREP_OVERRIDE;
         int rollback(const wsrep::ws_handle&, const wsrep::ws_meta&) WSREP_OVERRIDE;
@@ -101,6 +102,9 @@ namespace wsrep
         // state machine.
         bool fail_next_rollback_;
         bool fail_next_append_fragment_;
+        // Force remove_fragments() to report failure, e.g. to simulate a
+        // storage-engine level failure while removing streaming fragments.
+        bool fail_next_remove_fragments_;
         // Number of times after_apply() has been called on this instance,
         // so tests can verify it was (or was not) invoked after a failure.
         size_t after_apply_calls_;

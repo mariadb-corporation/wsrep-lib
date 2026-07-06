@@ -42,9 +42,18 @@
 //   - apply_write_set(): commit() fails            (FIXED)
 //   - apply_fragment():  rollback() fails after a failed apply
 //   - apply_fragment():  commit() fails while removing fragments
+//   - apply_fragment():  remove_fragments() itself fails
 //   - apply_fragment():  append_fragment_and_commit() fails
+//   - commit_fragment(): apply of the last fragment fails and the
+//                        resulting rollback also fails
 //   - commit_fragment(): commit() fails on the last fragment
 //   - rollback_fragment(): rollback() fails
+//
+// rollback_fragment()'s own fragment-removal block does *not* share the
+// anti-pattern -- it calls after_apply() unconditionally rather than via
+// "ret || (after_apply(), 0)". A passing test for its remove_fragments()
+// failure is included below as a coverage/non-regression check, so that
+// spot is not accidentally downgraded to the buggy idiom later.
 //
 
 #include "mock_server_state.hpp"
@@ -179,6 +188,38 @@ BOOST_FIXTURE_TEST_CASE(apply_fragment_remove_fragments_commit_failure_calls_aft
     BOOST_REQUIRE_EQUAL(sa->after_apply_calls_, after_apply_calls_before + 2);
 }
 
+// apply_fragment(): a fragment fails to apply, the rollback of that
+// attempt succeeds, but remove_fragments() itself (not the commit that
+// follows it) fails, e.g. a storage-engine level failure while removing
+// streaming fragments. Distinct from the commit-failure case above:
+// remove_fragments() failing here must skip neither commit() nor
+// after_apply() any differently, but it exercises a separate short-circuit
+// point that a fix targeting only the commit() failure would miss.
+BOOST_FIXTURE_TEST_CASE(apply_fragment_remove_fragments_failure_calls_after_apply,
+                        applier_cleanup_fixture)
+{
+    wsrep::mock_high_priority_service* sa(
+        start_streaming_fragment(ss, hps, ws_handle,
+                                 wsrep::id("1"), wsrep::transaction_id(1)));
+
+    sa->fail_next_applying_ = true;
+    sa->fail_next_remove_fragments_ = true;
+    size_t const after_apply_calls_before(sa->after_apply_calls_);
+
+    wsrep::ws_meta mid_meta(
+        wsrep::gtid(wsrep::id("1"), wsrep::seqno(2)),
+        wsrep::stid(wsrep::id("1"), wsrep::transaction_id(1),
+                    wsrep::client_id(1)),
+        wsrep::seqno(1),
+        0);
+    char buf[1] = { 1 };
+    BOOST_REQUIRE(ss.on_apply(hps, ws_handle, mid_meta,
+                              wsrep::const_buffer(buf, 1)) != 0);
+    // One after_apply() call is expected from the rollback of the failed
+    // apply, and a second one after the (failing) remove_fragments() call.
+    BOOST_REQUIRE_EQUAL(sa->after_apply_calls_, after_apply_calls_before + 2);
+}
+
 // apply_fragment(): a fragment applies successfully, but
 // append_fragment_and_commit() (appending it to persistent fragment
 // storage) fails. after_apply() must still run on the coordinating
@@ -199,6 +240,35 @@ BOOST_FIXTURE_TEST_CASE(apply_fragment_append_fragment_failure_calls_after_apply
     BOOST_REQUIRE(ss.on_apply(hps, ws_handle, start_meta,
                               wsrep::const_buffer(buf, 1)) != 0);
     BOOST_REQUIRE_EQUAL(hps.after_apply_calls_, after_apply_calls_before + 1);
+}
+
+// commit_fragment(): applying the last (commit) fragment itself fails, and
+// the rollback of that failed apply also fails (e.g. a storage-engine
+// level rollback failure). This exercises commit_fragment()'s apply_err
+// branch, which has its own, separate "ret || (after_apply(), 0)" call
+// site that the commit-failure test below never reaches (that test takes
+// the apply_err == 0 path). after_apply() must still run.
+BOOST_FIXTURE_TEST_CASE(commit_fragment_apply_and_rollback_failure_calls_after_apply,
+                        applier_cleanup_fixture)
+{
+    wsrep::mock_high_priority_service* sa(
+        start_streaming_fragment(ss, hps, ws_handle,
+                                 wsrep::id("1"), wsrep::transaction_id(1)));
+
+    sa->fail_next_applying_ = true;
+    sa->fail_next_rollback_ = true;
+    size_t const after_apply_calls_before(sa->after_apply_calls_);
+
+    wsrep::ws_meta commit_meta(
+        wsrep::gtid(wsrep::id("1"), wsrep::seqno(2)),
+        wsrep::stid(wsrep::id("1"), wsrep::transaction_id(1),
+                    wsrep::client_id(1)),
+        wsrep::seqno(1),
+        wsrep::provider::flag::commit);
+    char buf[1] = { 1 };
+    BOOST_REQUIRE(ss.on_apply(hps, ws_handle, commit_meta,
+                              wsrep::const_buffer(buf, 1)) != 0);
+    BOOST_REQUIRE_EQUAL(sa->after_apply_calls_, after_apply_calls_before + 1);
 }
 
 // commit_fragment(): the final commit of a streaming (or XA) transaction
@@ -272,4 +342,41 @@ BOOST_FIXTURE_TEST_CASE(rollback_fragment_rollback_failure_calls_after_apply,
     // abandoned, still-active transaction.
     rollback_hps.rollback(ws_handle, rollback_meta);
     rollback_hps.after_apply();
+}
+
+// rollback_fragment(): the streaming applier's own out-of-order rollback
+// succeeds, but remove_fragments() on the coordinating high_priority_service
+// fails while removing the now-obsolete fragments from storage. Unlike its
+// siblings above, this call site already calls after_apply()
+// unconditionally rather than through "ret || (after_apply(), 0)", so this
+// is a coverage/non-regression check rather than a bug demonstration.
+BOOST_FIXTURE_TEST_CASE(rollback_fragment_remove_fragments_failure_calls_after_apply,
+                        applier_cleanup_fixture)
+{
+    wsrep::mock_high_priority_service* sa(
+        start_streaming_fragment(ss, hps, ws_handle,
+                                 wsrep::id("1"), wsrep::transaction_id(1)));
+    (void)sa;
+
+    // Use a separate high priority service for the rollback write set,
+    // mirroring how a real rollback fragment is delivered on its own
+    // applier thread (see wsrep_test::terminate_streaming_applier()).
+    wsrep::mock_client rollback_cc(ss, wsrep::client_id(2),
+                                   wsrep::client_state::m_high_priority);
+    rollback_cc.open(wsrep::client_id(2));
+    rollback_cc.before_command();
+    wsrep::mock_high_priority_service rollback_hps(ss, &rollback_cc, false);
+    rollback_hps.fail_next_remove_fragments_ = true;
+    size_t const after_apply_calls_before(rollback_hps.after_apply_calls_);
+
+    wsrep::ws_meta rollback_meta(
+        wsrep::gtid(wsrep::id("1"), wsrep::seqno(2)),
+        wsrep::stid(wsrep::id("1"), wsrep::transaction_id(1),
+                    wsrep::client_id(1)),
+        wsrep::seqno(1),
+        wsrep::provider::flag::rollback);
+    BOOST_REQUIRE(ss.on_apply(rollback_hps, ws_handle, rollback_meta,
+                              wsrep::const_buffer(0, 0)) != 0);
+    BOOST_REQUIRE_EQUAL(rollback_hps.after_apply_calls_,
+                        after_apply_calls_before + 1);
 }

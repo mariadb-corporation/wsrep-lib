@@ -109,8 +109,9 @@ int wsrep::mock_high_priority_service::rollback(
     const wsrep::ws_meta& ws_meta)
 {
     client_state_->prepare_for_ordering(ws_handle, ws_meta, false);
-    return (client_state_->before_rollback() ||
-            client_state_->after_rollback());
+    int const ret(client_state_->before_rollback() ||
+                  client_state_->after_rollback());
+    return (fail_next_rollback_ ? 1 : ret);
 }
 
 int wsrep::mock_high_priority_service::apply_toi(const wsrep::ws_meta&,
@@ -158,6 +159,7 @@ void wsrep::mock_high_priority_service::adopt_apply_error(
 
 void wsrep::mock_high_priority_service::after_apply()
 {
+    ++after_apply_calls_;
     client_state_->after_applying();
 }
 

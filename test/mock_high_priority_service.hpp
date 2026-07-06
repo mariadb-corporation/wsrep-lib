@@ -38,6 +38,9 @@ namespace wsrep
             , do_2pc_()
             , fail_next_applying_()
             , fail_next_toi_()
+            , fail_next_rollback_()
+            , fail_next_append_fragment_()
+            , after_apply_calls_()
             , client_state_(client_state)
             , replaying_(replaying)
             , nbo_cs_()
@@ -61,7 +64,7 @@ namespace wsrep
             const wsrep::ws_meta&,
             const wsrep::const_buffer&,
             const wsrep::xid&) WSREP_OVERRIDE
-        { return 0; }
+        { return fail_next_append_fragment_ ? 1 : 0; }
         int remove_fragments(const wsrep::ws_meta&) WSREP_OVERRIDE
         { return 0; }
         int commit(const wsrep::ws_handle&, const wsrep::ws_meta&)
@@ -92,6 +95,15 @@ namespace wsrep
         bool do_2pc_;
         bool fail_next_applying_;
         bool fail_next_toi_;
+        // Force rollback()/append_fragment_and_commit() to report failure
+        // regardless of the underlying transaction outcome, so tests can
+        // simulate a DBMS-side failure independent of wsrep-lib's own
+        // state machine.
+        bool fail_next_rollback_;
+        bool fail_next_append_fragment_;
+        // Number of times after_apply() has been called on this instance,
+        // so tests can verify it was (or was not) invoked after a failure.
+        size_t after_apply_calls_;
 
         wsrep::mock_client* nbo_cs() const { return nbo_cs_.get(); }
 

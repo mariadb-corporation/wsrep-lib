@@ -1,3 +1,3 @@
 [submodule "wsrep-API/v26"]
 	path = wsrep-API/v26
-	url = https://github.com/codership/wsrep-API.git
+	url = https://github.com/mariadb-corporation/wsrep-API.git

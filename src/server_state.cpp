@@ -336,7 +336,14 @@ static int apply_write_set(wsrep::server_state& server_state,
             {
                 assert(err.size() == 0);
                 ret = high_priority_service.commit(ws_handle, ws_meta);
-                ret = ret || (high_priority_service.after_apply(), 0);
+                // Commit may fail if commit order could not be entered, e.g.
+                // the node left the primary component. Roll back the
+                // still-active applier transaction; after_apply() cleans up.
+                if (ret)
+                {
+                    high_priority_service.rollback(ws_handle, ws_meta);
+                }
+                high_priority_service.after_apply();
             }
             else
             {

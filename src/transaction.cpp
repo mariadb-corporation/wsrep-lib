@@ -27,6 +27,7 @@
 #include "wsrep/compiler.hpp"
 #include "wsrep/server_service.hpp"
 #include "wsrep/client_service.hpp"
+#include "wsrep/assert.hpp"
 
 #include <cassert>
 #include <sstream>
@@ -359,10 +360,14 @@ int wsrep::transaction::before_prepare(wsrep::unique_lock<wsrep::mutex>& lock,
                 ret = certify_commit(lock, seq_cb);
             }
 
-            assert((ret == 0 && state() == s_preparing) ||
+            WSREP_INFO_ASSERT(((ret == 0 && state() == s_preparing) ||
                    (state() == s_must_abort ||
                     state() == s_must_replay ||
-                    state() == s_cert_failed));
+                    state() == s_cert_failed)),
+		   ("::before_prepare : ret=%d error=%s state=%s\n",
+                    ret,
+                    to_c_string(client_state_.current_error()),
+                    to_c_string(state())));
 
             if (ret)
             {
@@ -392,12 +397,17 @@ int wsrep::transaction::before_prepare(wsrep::unique_lock<wsrep::mutex>& lock,
         break;
     }
 
-    assert(state() == s_preparing ||
+    WSREP_INFO_ASSERT((state() == s_preparing ||
            (is_xa() && state() == s_replaying) ||
            (ret && (state() == s_must_abort ||
                     state() == s_must_replay ||
                     state() == s_cert_failed ||
-                    state() == s_aborted)));
+                    state() == s_aborted))),
+		   ("::before_prepare_leave : ret=%d error=%s state=%s\n",
+                    ret,
+                    to_c_string(client_state_.current_error()),
+                    to_c_string(state())));
+
     debug_log_state("before_prepare_leave");
     return ret;
 }

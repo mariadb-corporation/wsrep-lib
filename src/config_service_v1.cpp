@@ -159,6 +159,8 @@ int wsrep::config_service_v1_fetch(wsrep::provider& provider,
     if (config_service_v1_probe(wsrep->dlh))
     {
         wsrep::log_warning() << "Provider does not support config service v1";
+        wsrep::log_warning() << "Provider " << provider.name() << " " <<
+            provider.version() << " used required at least 26.4.14";
         return 1;
     }
     if (config_service_v1_init(wsrep->dlh))

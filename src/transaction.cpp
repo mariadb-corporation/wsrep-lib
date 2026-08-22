@@ -799,7 +799,8 @@ int wsrep::transaction::release_commit_order(
     int ret(provider().commit_order_enter(ws_handle_, ws_meta_));
     if (!ret)
     {
-        server_service_.set_position(client_service_, ws_meta_.gtid());
+        server_service_.set_position(client_service_, ws_meta_.gtid(),
+                                     (state() == s_aborted));
         ret = provider().commit_order_leave(ws_handle_, ws_meta_,
                                             apply_error_buf_);
     }

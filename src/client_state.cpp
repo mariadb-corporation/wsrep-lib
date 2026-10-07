@@ -71,7 +71,20 @@ void wsrep::client_state::close()
         (mode_ != m_local || !client_service_.is_prepared_xa()))
     {
         client_service_.bf_rollback();
-        transaction_.after_statement();
+        // after_statement() implements local client semantics (deadlock
+        // retry, error override) and asserts m_local. A high priority
+        // transaction (applier/TOI) that is still active at close - e.g.
+        // an applier torn down while the node leaves the primary component
+        // after losing an inconsistency vote - must use the applier
+        // cleanup path instead.
+        if (mode_ == m_local)
+        {
+            transaction_.after_statement();
+        }
+        else
+        {
+            transaction_.after_applying();
+        }
     }
     if (mode_ == m_local)
     {

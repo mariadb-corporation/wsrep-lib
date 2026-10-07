@@ -1141,6 +1141,27 @@ void wsrep::transaction::clone_for_replay(const wsrep::transaction& other)
     ws_handle_ = other.ws_handle_;
     ws_meta_ = other.ws_meta_;
     streaming_context_ = other.streaming_context_;
+
+    /* If ws_meta has undefined seqno but there are certified streaming
+     * fragments, use the last fragment seqno. This happens when a
+     * streaming XA COMMIT is BF aborted before or during certification:
+     * commit_or_rollback_by_xid() uses a local ws_meta for certify(),
+     * so the transaction's ws_meta_ never gets the certified seqno.
+     * The replay thread needs a valid seqno for BF abort ordering.
+     */
+    if (ws_meta_.seqno().is_undefined() &&
+        is_streaming() && !streaming_context_.fragments().empty())
+    {   
+        wsrep::seqno last_frag_seqno(streaming_context_.fragments().back());
+        ws_meta_ = wsrep::ws_meta(
+            wsrep::gtid(ws_meta_.group_id(), last_frag_seqno),
+            wsrep::stid(ws_meta_.server_id(),
+                        ws_meta_.transaction_id(),
+                        ws_meta_.client_id()),
+            ws_meta_.depends_on(),
+            ws_meta_.flags());
+    }
+
     state_ = s_replaying;
     client_service_.notify_state_change();
 }

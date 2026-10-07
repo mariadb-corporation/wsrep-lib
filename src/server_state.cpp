@@ -1108,6 +1108,17 @@ void wsrep::server_state::on_sync()
         // Calls to on_sync() in synced state are possible if
         // server desyncs itself from the group. Provider does not
         // inform about this through callbacks.
+        //
+        // It is also possible to receive the SYNCED event while still
+        // in donor state, if it arrives before sst_sent() had a chance
+        // to return us from donor to joined. Anticipate JOINED here,
+        // mirroring return_from_donor_state(), so that the transition
+        // to synced goes through joined instead of the unallowed
+        // donor -> synced.
+        if (state_ == s_donor)
+        {
+            return_from_donor_state(lock);
+        }
         if (state_ != s_synced && state_ != s_disconnecting)
         {
             state(lock, s_synced);

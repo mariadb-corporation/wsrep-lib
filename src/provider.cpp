@@ -72,7 +72,7 @@ wsrep::provider::to_string(enum wsrep::provider::status const val)
     case error_size_exceeded:
         return "Transaction size exceeded";
     case error_connection_failed:
-        return "Not connected to Primary Component";
+        return "Not synced with a Primary Component";
     case error_provider_failed:
         return "Provider in bad state, needs to be reinitialized.";
     case error_fatal:
